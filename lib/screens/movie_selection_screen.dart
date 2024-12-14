@@ -1,7 +1,5 @@
-import 'dart:async';
-import 'dart:math' as math;
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_swipable/flutter_swipable.dart'; 
 import 'package:final_project/utils/movie_service.dart';
 import 'package:final_project/utils/ movie.dart' as utils;
 
@@ -12,21 +10,35 @@ class MovieSelectionScreen extends StatefulWidget {
   _MovieSelectionScreenState createState() => _MovieSelectionScreenState();
 }
 
-class _MovieSelectionScreenState extends State<MovieSelectionScreen> {
+class _MovieSelectionScreenState extends State<MovieSelectionScreen>
+    with SingleTickerProviderStateMixin {
   List<utils.Movie> _movies = [];
-  int _currentIndex = 0; 
-  List<utils.Movie> _likedMovies = []; 
-  final StreamController<double> _swipeController = StreamController<double>();
+  int _currentIndex = 0;
+  List<utils.Movie> _likedMovies = [];
+  late AnimationController _controller;
+  late Animation<Offset> _animation;
+  Offset _dragOffset = Offset.zero;
+  double _rotation = 0.0;
 
   @override
   void initState() {
     super.initState();
     _fetchMovies();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _animation = Tween<Offset>(begin: Offset.zero, end: Offset.zero).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _swipeController.close();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -39,23 +51,56 @@ class _MovieSelectionScreenState extends State<MovieSelectionScreen> {
   }
 
   void _handleSwipe(bool isLiked) {
-    final movie = _movies[_currentIndex];
-
     if (isLiked) {
-      _likedMovies.add(movie);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Liked: ${movie.title}')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Disliked: ${movie.title}')),
-      );
+      _likedMovies.add(_movies[_currentIndex]);
     }
 
-    
     setState(() {
       _currentIndex++;
     });
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    _dragOffset = Offset.zero;
+    _rotation = 0.0;
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    setState(() {
+      _dragOffset += details.delta;
+      _rotation = _dragOffset.dx / 100;
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    const swipeThreshold = 200.0;
+    const swipeVelocityThreshold = 1000.0;
+
+    if (_dragOffset.dx.abs() > swipeThreshold ||
+        details.velocity.pixelsPerSecond.dx.abs() > swipeVelocityThreshold) {
+      bool isLiked = _dragOffset.dx > 0;
+      _animateOut(isLiked);
+      _handleSwipe(isLiked);
+    } else {
+      _resetPosition();
+    }
+  }
+
+  void _animateOut(bool isLiked) {
+    final endOffset = isLiked
+        ? Offset(MediaQuery.of(context).size.width * 1.5, 0)
+        : Offset(-MediaQuery.of(context).size.width * 1.5, 0);
+    _animation = Tween<Offset>(begin: _dragOffset, end: endOffset).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _controller.forward(from: 0.0);
+  }
+
+  void _resetPosition() {
+    _controller.reverse(from: 1.0);
   }
 
   @override
@@ -67,7 +112,6 @@ class _MovieSelectionScreenState extends State<MovieSelectionScreen> {
           IconButton(
             icon: const Icon(Icons.favorite),
             onPressed: () {
-              
               showModalBottomSheet(
                 context: context,
                 builder: (context) => _buildLikedMovies(),
@@ -86,11 +130,23 @@ class _MovieSelectionScreenState extends State<MovieSelectionScreen> {
                   ),
                 )
               : Center(
-                  child: Swipable(
-                    swipe: _swipeController.stream, 
-                    onSwipeLeft: (finalPosition) => _handleSwipe(false),
-                    onSwipeRight: (finalPosition) => _handleSwipe(true),
-                    child: _buildMovieCard(_movies[_currentIndex]),
+                  child: GestureDetector(
+                    onPanStart: _onPanStart,
+                    onPanUpdate: _onPanUpdate,
+                    onPanEnd: _onPanEnd,
+                    child: AnimatedBuilder(
+                      animation: _animation,
+                      builder: (context, child) {
+                        return Transform.translate(
+                          offset: _animation.value,
+                          child: Transform.rotate(
+                            angle: _rotation,
+                            child: child!,
+                          ),
+                        );
+                      },
+                      child: _buildMovieCard(_movies[_currentIndex]),
+                    ),
                   ),
                 ),
       floatingActionButton: _movies.isNotEmpty
@@ -100,14 +156,16 @@ class _MovieSelectionScreenState extends State<MovieSelectionScreen> {
                 FloatingActionButton(
                   backgroundColor: Colors.red,
                   onPressed: () {
-                    _swipeController.add(math.pi); 
+                    _controller.forward(from: 0.0);
+                    _handleSwipe(false);
                   },
                   child: const Icon(Icons.thumb_down),
                 ),
                 FloatingActionButton(
                   backgroundColor: Colors.green,
                   onPressed: () {
-                    _swipeController.add(0); 
+                    _controller.forward(from: 0.0);
+                    _handleSwipe(true);
                   },
                   child: const Icon(Icons.thumb_up),
                 ),

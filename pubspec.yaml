@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_swipable: ^1.0.0  
+  flutter_swipable: ^1.2.1 
   android_id: ^0.4.0
   device_info_plus: ^11.2.0
   provider: ^6.0.0
